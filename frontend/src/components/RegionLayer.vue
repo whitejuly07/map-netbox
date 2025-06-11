@@ -1,125 +1,118 @@
-<!-- frontend/src/components/RegionLayer.vue -->
+// RegionLayer.vue
 <template>
-  <v-stage :config="stageConfig" class="absolute top-0 left-0 w-full h-full z-0">
-    <v-layer ref="layerRef">
-      <v-group
-        v-for="region in regions"
-        :key="region.id"
-        :draggable="true"
-        @click="selectRegion(region)"
-        @dragend="onDragEnd(region, $event)"
-      >
+  <div>
+    <v-stage :config="stageConfig">
+      <v-layer>
+        <!-- Отрисовка регионов -->
         <v-rect
-          :config="{
-            x: region.x,
-            y: region.y,
-            width: region.width,
-            height: region.height,
-            fill: region.color,
-            stroke: '#333',
-            strokeWidth: 1,
-            name: 'region-rect'
-          }"
+          v-for="region in regions"
+          :key="region.id"
+          :x="region.x"
+          :y="region.y"
+          :width="region.width"
+          :height="region.height"
+          :fill="region.color || '#b8b8b853'"
+          :stroke="'black'"
+          :strokeWidth="1"
+          @click="selectRegion(region)"
         />
+
+        <!-- Подписи регионов -->
         <v-text
+          v-for="region in regions"
+          :key="region.id + '-label'"
           :x="region.x + 5"
           :y="region.y + 5"
           :text="region.name"
           fontSize="14"
-          fill="#000"
+          fill="black"
         />
-      </v-group>
+      </v-layer>
+    </v-stage>
 
-      <v-transformer v-if="selectedNode" :config="{ nodes: [selectedNode] }" />
-    </v-layer>
-  </v-stage>
+    <!-- Форма редактирования региона -->
+    <div v-if="editingRegion" class="region-editor">
+      <label>Имя:</label>
+      <input v-model="editingRegion.name" />
+
+      <label>X:</label>
+      <input type="number" v-model.number="editingRegion.x" />
+
+      <label>Y:</label>
+      <input type="number" v-model.number="editingRegion.y" />
+
+      <label>Ширина:</label>
+      <input type="number" v-model.number="editingRegion.width" />
+
+      <label>Высота:</label>
+      <input type="number" v-model.number="editingRegion.height" />
+
+      <label>Цвет:</label>
+      <input type="color" v-model="editingRegion.color" />
+
+      <button @click="saveRegion">OK</button>
+    </div>
+  </div>
 </template>
 
-<script setup>
-import { ref, onMounted, nextTick, watch } from 'vue'
+<script>
+import { Stage, Layer, Rect, Text } from 'vue-konva';
 
-const regions = ref([])
-const selectedRegion = ref(null)
-const selectedNode = ref(null)
-const layerRef = ref(null)
-
-const stageConfig = {
-  width: window.innerWidth,
-  height: window.innerHeight
-}
-
-async function loadRegions() {
-  console.log("Загружаем регионы...")
-  const res = await fetch("/api/regions")
-  const raw = await res.json()
-  console.log("Регионы с сервера:", raw)
-  regions.value = raw
-  selectedNode.value = null
-  selectedRegion.value = null
-}
-
-function selectRegion(region) {
-  selectedRegion.value = region
-  nextTick(() => {
-    const layer = layerRef.value.getNode()
-    const rect = layer.findOne((n) =>
-      n.getAttr("name") === "region-rect" &&
-      n.x() === region.x &&
-      n.y() === region.y
-    )
-    selectedNode.value = rect
-  })
-}
-
-function onDragEnd(region, e) {
-  region.x = e.target.x()
-  region.y = e.target.y()
-  saveRegion(region)
-}
-
-function onTransformEnd() {
-  if (!selectedNode.value || !selectedRegion.value) return
-  const node = selectedNode.value
-  const region = selectedRegion.value
-
-  region.x = node.x()
-  region.y = node.y()
-  region.width = node.width() * node.scaleX()
-  region.height = node.height() * node.scaleY()
-
-  node.scaleX(1)
-  node.scaleY(1)
-
-  saveRegion(region)
-}
-
-async function saveRegion(region) {
-  await fetch("/api/regions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(region)
-  })
-}
-
-onMounted(() => {
-  loadRegions()
-  const socket = new WebSocket(`ws://${location.host}/ws`)
-  socket.onmessage = (event) => {
-    if (event.data === "region_updated") loadRegions()
+export default {
+  components: { 'v-stage': Stage, 'v-layer': Layer, 'v-rect': Rect, 'v-text': Text },
+  data() {
+    return {
+      regions: [],
+      editingRegion: null,
+      stageConfig: {
+        width: window.innerWidth,
+        height: window.innerHeight
+      }
+    };
+  },
+  mounted() {
+    this.loadRegions();
+  },
+  methods: {
+    async loadRegions() {
+      const res = await fetch('/api/regions');
+      this.regions = await res.json();
+    },
+    selectRegion(region) {
+      this.editingRegion = { ...region };
+    },
+    async saveRegion() {
+      await fetch('/api/regions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.editingRegion)
+      });
+      this.editingRegion = null;
+      await this.loadRegions();
+    }
   }
-})
-
-watch(selectedNode, (node) => {
-  if (!node) return
-  node.on("transformend", onTransformEnd)
-})
+};
 </script>
 
 <style scoped>
-.absolute {
+.region-editor {
   position: absolute;
+  top: 20px;
+  left: 20px;
+  background: white;
+  padding: 10px;
+  border: 1px solid #ccc;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 200px;
 }
-.z-0 {
-  z-index: 0;
+
+.region-editor input[type="text"],
+.region-editor input[type="number"],
+.region-editor input[type="color"] {
+  width: 100%;
 }
 </style>

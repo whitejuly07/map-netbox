@@ -327,6 +327,17 @@ async function fetchGraph() {
   }
 
   drawRegionsOnBackground()
+
+  // Сохраняем позиции узлов после перетаскивания
+  network.on('dragEnd', async function (event) {
+  if (!event.nodes || event.nodes.length === 0) return;
+  const positions = network.getPositions();
+  await fetch('/api/positions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(positions)
+  });
+});
 }
 
 async function onClickUpdate() {
